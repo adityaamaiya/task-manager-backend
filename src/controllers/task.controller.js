@@ -1,5 +1,5 @@
 const TaskService = require("../services/task.service");
-const mongoose = require("mongoose");
+
 const taskValidationSchema = require("../validations/taskSchema.validation");
 
 const createTask = async (req, res) => {
@@ -12,17 +12,17 @@ const createTask = async (req, res) => {
     const { title, description, deadline } = req.body;
     const file = req.file;
 
-    // Prepare the new task object
-    const taskDta = {
+    // Prepare the task object
+    const taskData = {
       title,
       description,
       deadline,
       linkedFile: file
         ? { data: file.buffer, contentType: file.mimetype }
-        : null,
+        : null, // Optional linkedFile field
     };
 
-    const savedTask = await TaskService.createTask(taskDta);
+    const savedTask = await TaskService.createTask(taskData);
     res.status(201).json(savedTask);
   } catch (error) {
     console.error("Error creating task:", error);
@@ -47,10 +47,6 @@ const getTaskById = async (req, res) => {
   console.log("Request ID:", req.params.id); // Debug log
 
   try {
-    // Validate Task ID
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid Task ID" });
-    }
     const task = await TaskService.getTaskById(req.params.id);
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
@@ -62,11 +58,8 @@ const getTaskById = async (req, res) => {
   }
 };
 
-const downloaddTaskFile = async (req, res) => {
+const downloadTaskFile = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid Task ID" });
-    }
     const task = await TaskService.getTaskById(req.params.id);
 
     // Check if the task has a linked file and if the contentType is defined
@@ -79,6 +72,9 @@ const downloaddTaskFile = async (req, res) => {
     const fileBuffer = task.linkedFile.data;
     const contentType =
       task.linkedFile.contentType || "application/octet-stream"; // Default MIME type
+
+    console.log("File buffer size:", fileBuffer.length); // Check buffer size
+    console.log("Content type:", contentType); // Check content type
 
     res.setHeader("Content-Type", contentType); // Set content type for file
     res.setHeader(
@@ -98,37 +94,51 @@ const updateTask = async (req, res) => {
   try {
     const { error } = taskValidationSchema.validate(req.body);
     if (error) {
-      // If validation fails, return an error response
+      console.error("Validation error:", error.details[0].message);
       return res.status(400).json({ error: error.details[0].message });
     }
-    // Validate Task ID
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid Task ID" });
+
+    const { title, description, status, deadline } = req.body;
+    const file = req.file;
+
+    const updatedFields = {
+      title,
+      description,
+      status,
+      deadline,
+    };
+
+    // Only add the linked file if a new file is provided
+    if (file) {
+      updatedFields.linkedFile = {
+        data: file.buffer,
+        contentType: file.mimetype,
+      };
     }
 
-    // Update Task
-    const task = await TaskService.updateTask(req.params.id, req.body);
+    const updatedTask = await TaskService.updateTask(
+      req.params.id,
+      updatedFields
+    );
 
-    // Handle if task is not found
-    if (!task) {
-      return res.status(404).json({ message: "Task not found" });
+    if (!updatedTask) {
+      return res.status(404).json({ error: "Task not found" });
     }
 
-    // Send updated task
-    res.status(200).json(task);
+    res.status(200).json(updatedTask);
   } catch (error) {
     console.error("Error updating task:", error);
 
-    // Use appropriate status code for server errors
-    res.status(500).json({ error: error.message || "Internal Server Error" });
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: "Failed to update task" });
   }
 };
 
 const deleteTask = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(404).json({ message: "Invalid Task ID" });
-    }
     await TaskService.deleteTask(req.params.id);
 
     res.status(200).json({ message: "Task deleted successfully" });
@@ -143,5 +153,5 @@ module.exports = {
   getTaskById,
   updateTask,
   deleteTask,
-  downloaddTaskFile,
+  downloadTaskFile,
 };
